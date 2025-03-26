@@ -1,0 +1,49 @@
+AWSTemplateFormatVersion: 2010-09-09
+Resources:
+    FirstVPC:
+        Type: AWS::EC2::VPC
+        Properties:
+            CidrBlock: 10.0.0.0/16
+            EnableDnsSupport: true
+            Tags:
+                - Key: keyname
+                  Value: first-VPC
+    InternetGateway:
+        Type: AWS::EC2::InternetGateway
+        Properties:
+            Tags:
+                - Key: keyname
+                  Value: FirstVPC-IGN
+    AttachGateway:
+        Type: AWS::EC2::VPCGatewayAttachment
+        Properties:
+            VpcId: !Ref FirstVPC
+            InternetGatewayId: !Ref InternetGateway
+    FrontendRouteTable:
+        Type: AWS::EC2::RouteTable
+        DependsOn: AttachGateway
+        Properties:
+            VpcId: !Ref FirstVPC
+            Tags:
+                - Key: keyname
+                  Value: FirstVPC-FrontendRoute
+    FrontendRoute:
+        Type: AWS::EC2::Route
+        Properties:
+            RouteTableId: !Ref FrontendRouteTable
+            DestinationCidrBlock: 0.0.0.0/0
+            GatewayId: !Ref InternetGateway
+    FrontendSubnet:
+        Type: AWS::EC2::Subnet
+        Properties:
+            VpcId: !Ref FirstVPC
+            MapPublicIpOnLaunch: "true"
+            CidrBlock: 10.0.1.0/24
+            Tags:
+                - Key: keyname
+                  Value: FirstVPC-FrontendSubnet
+    FrontendSubnetRouteTableAssociation:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+            SubnetId: !Ref FrontendSubnet
+            RouteTableId: !Ref FrontendRouteTable
