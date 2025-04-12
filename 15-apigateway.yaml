@@ -1,0 +1,184 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: API Gateway for Application
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    Description: Environment name (dev/prod)
+
+  AppName:
+    Type: String
+    Default: myapp
+    Description: Application name
+
+  DomainName:
+    Type: String
+    Description: Custom domain name for API Gateway
+    Default: ''
+
+  CertificateArn:
+    Type: String
+    Description: ARN of the SSL certificate for custom domain
+    Default: ''
+
+Conditions:
+  IsDev: !Equals [!Ref EnvironmentName, 'dev']
+  IsProd: !Equals [!Ref EnvironmentName, 'prod']
+  HasCustomDomain: !Not [!Equals [!Ref DomainName, '']]
+
+Resources:
+  # API Gateway
+  ApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub ${AppName}-${EnvironmentName}-api
+      Description: API Gateway for the application
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-${EnvironmentName}-api
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # /systems リソース
+  SystemsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: systems
+
+  # /systems のGETメソッド
+  SystemsGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref SystemsResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaArn}/invocations
+          - LambdaArn: !ImportValue 
+              Fn::Sub: ${EnvironmentName}-NotificationLambdaArn
+        IntegrationResponses:
+          - StatusCode: 200
+      MethodResponses:
+        - StatusCode: 200
+
+  # API Gatewayのリソース（プロキシ）
+  ApiResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: '{proxy+}'
+
+  # API Gatewayのメソッド（プロキシ）
+  ApiMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref ApiResource
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaArn}/invocations
+          - LambdaArn: !ImportValue 
+              Fn::Sub: ${EnvironmentName}-NotificationLambdaArn
+        IntegrationResponses:
+          - StatusCode: 200
+      MethodResponses:
+        - StatusCode: 200
+
+  # Lambdaの実行権限
+  ApiGatewayLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !ImportValue 
+        Fn::Sub: ${EnvironmentName}-NotificationLambdaArn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 
+        - arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiId}/*/*/*
+        - ApiId: !Ref ApiGateway
+
+  # API Gatewayのデプロイメント
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn: 
+      - ApiMethod
+      - SystemsGetMethod
+    Properties:
+      RestApiId: !Ref ApiGateway
+      StageName: !Ref EnvironmentName
+      StageDescription:
+        StageName: !Ref EnvironmentName
+        Description: !Sub API Gateway deployment for ${EnvironmentName} environment
+        Variables:
+          Environment: !Ref EnvironmentName
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-${EnvironmentName}-api-deployment
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # カスタムドメイン名（オプション）
+  ApiDomainName:
+    Type: AWS::ApiGateway::DomainName
+    Condition: HasCustomDomain
+    Properties:
+      DomainName: !Ref DomainName
+      RegionalCertificateArn: !Ref CertificateArn
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-${EnvironmentName}-api-domain
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # カスタムドメイン名のマッピング（オプション）
+  ApiBasePathMapping:
+    Type: AWS::ApiGateway::BasePathMapping
+    Condition: HasCustomDomain
+    Properties:
+      DomainName: !Ref ApiDomainName
+      RestApiId: !Ref ApiGateway
+      Stage: !Ref EnvironmentName
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub 
+      - https://${ApiId}.execute-api.${AWS::Region}.amazonaws.com/${EnvironmentName}
+      - ApiId: !Ref ApiGateway
+    Export:
+      Name: !Sub ${EnvironmentName}-ApiEndpoint
+
+  ApiId:
+    Description: API Gateway ID
+    Value: !Ref ApiGateway
+    Export:
+      Name: !Sub ${EnvironmentName}-ApiId
+
+  ApiDomainName:
+    Description: API Gateway custom domain name
+    Value: !If 
+      - HasCustomDomain
+      - !Ref DomainName
+      - !Ref AWS::NoValue
+    Export:
+      Name: !Sub ${EnvironmentName}-ApiDomainName 

@@ -1,0 +1,215 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudWatch Dashboard for Application
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    Description: Environment name (dev/prod)
+
+  AppName:
+    Type: String
+    Default: myapp
+    Description: Application name
+
+Resources:
+  # CloudWatchダッシュボード
+  Dashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub ${AppName}-${EnvironmentName}-dashboard
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/ECS", "CPUUtilization", "ClusterName", {"Fn::ImportValue": {"Fn::Sub": "${EnvironmentName}-EcsClusterName"}}, "ServiceName", {"Fn::ImportValue": {"Fn::Sub": "${EnvironmentName}-EcsServiceName"}}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": {"Ref": "AWS::Region"},
+                "title": "ECS CPU Utilization",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/ECS", "MemoryUtilization", "ClusterName", {"Fn::ImportValue": {"Fn::Sub": "${EnvironmentName}-EcsClusterName"}}, "ServiceName", {"Fn::ImportValue": {"Fn::Sub": "${EnvironmentName}-EcsServiceName"}}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": {"Ref": "AWS::Region"},
+                "title": "ECS Memory Utilization",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/ECS", "RunningTaskCount", "ClusterName", {"Fn::ImportValue": {"Fn::Sub": "${EnvironmentName}-EcsClusterName"}}, "ServiceName", {"Fn::ImportValue": {"Fn::Sub": "${EnvironmentName}-EcsServiceName"}}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": {"Ref": "AWS::Region"},
+                "title": "ECS Running Tasks",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/DocDB", "CPUUtilization", "DBClusterIdentifier", {"Fn::ImportValue": {"Fn::Sub": "${EnvironmentName}-DocumentDBClusterIdentifier"}}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": {"Ref": "AWS::Region"},
+                "title": "DocumentDB CPU Utilization",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/DocDB", "FreeableMemory", "DBClusterIdentifier", {"Fn::ImportValue": {"Fn::Sub": "${EnvironmentName}-DocumentDBClusterIdentifier"}}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": {"Ref": "AWS::Region"},
+                "title": "DocumentDB Freeable Memory",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/DocDB", "DatabaseConnections", "DBClusterIdentifier", {"Fn::ImportValue": {"Fn::Sub": "${EnvironmentName}-DocumentDBClusterIdentifier"}}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": {"Ref": "AWS::Region"},
+                "title": "DocumentDB Connections",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/Lambda", "Invocations", "FunctionName", {"Fn::ImportValue": {"Fn::Sub": "${EnvironmentName}-NotificationLambdaName"}}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": {"Ref": "AWS::Region"},
+                "title": "Lambda Invocations",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/Lambda", "Errors", "FunctionName", {"Fn::ImportValue": {"Fn::Sub": "${EnvironmentName}-NotificationLambdaName"}}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": {"Ref": "AWS::Region"},
+                "title": "Lambda Errors",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/Lambda", "Duration", "FunctionName", {"Fn::ImportValue": {"Fn::Sub": "${EnvironmentName}-NotificationLambdaName"}}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": {"Ref": "AWS::Region"},
+                "title": "Lambda Duration",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/ApiGateway", "Count", "ApiName", {"Fn::ImportValue": {"Fn::Sub": "${EnvironmentName}-ApiId"}}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": {"Ref": "AWS::Region"},
+                "title": "API Gateway Requests",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/ApiGateway", "5XXError", "ApiName", {"Fn::ImportValue": {"Fn::Sub": "${EnvironmentName}-ApiId"}}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": {"Ref": "AWS::Region"},
+                "title": "API Gateway 5XX Errors",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/ApiGateway", "Latency", "ApiName", {"Fn::ImportValue": {"Fn::Sub": "${EnvironmentName}-ApiId"}}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": {"Ref": "AWS::Region"},
+                "title": "API Gateway Latency",
+                "period": 300
+              }
+            }
+          ]
+        }
+
+Outputs:
+  DashboardName:
+    Description: CloudWatch Dashboard name
+    Value: !Ref Dashboard
+    Export:
+      Name: !Sub ${EnvironmentName}-DashboardName 

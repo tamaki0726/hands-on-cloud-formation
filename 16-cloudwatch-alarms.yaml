@@ -1,0 +1,211 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudWatch Alarms for Application
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    Description: Environment name (dev/prod)
+
+  AppName:
+    Type: String
+    Default: myapp
+    Description: Application name
+
+  AlarmEmail:
+    Type: String
+    Description: Email address for alarm notifications
+    Default: ''
+
+Conditions:
+  IsDev: !Equals [!Ref EnvironmentName, 'dev']
+  IsProd: !Equals [!Ref EnvironmentName, 'prod']
+  HasAlarmEmail: !Not [!Equals [!Ref AlarmEmail, '']]
+
+Resources:
+  # SNSトピック（アラーム通知用）
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: !Sub ${AppName}-${EnvironmentName}-alarms
+      TopicName: !Sub ${AppName}-${EnvironmentName}-alarms
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-${EnvironmentName}-alarms
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # SNSトピックのサブスクリプション
+  AlarmTopicSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlarmEmail
+    Properties:
+      Protocol: email
+      Endpoint: !Ref AlarmEmail
+      TopicArn: !Ref AlarmTopic
+
+  # ECS CPU使用率アラーム
+  EcsCpuAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${AppName}-${EnvironmentName}-ecs-cpu
+      AlarmDescription: ECS CPU utilization is high
+      MetricName: CPUUtilization
+      Namespace: AWS/ECS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ClusterName
+          Value: !ImportValue 
+            Fn::Sub: ${EnvironmentName}-EcsClusterName
+        - Name: ServiceName
+          Value: !ImportValue 
+            Fn::Sub: ${EnvironmentName}-EcsServiceName
+      AlarmActions:
+        - !Ref AlarmTopic
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-${EnvironmentName}-ecs-cpu-alarm
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # ECS メモリ使用率アラーム
+  EcsMemoryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${AppName}-${EnvironmentName}-ecs-memory
+      AlarmDescription: ECS Memory utilization is high
+      MetricName: MemoryUtilization
+      Namespace: AWS/ECS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ClusterName
+          Value: !ImportValue 
+            Fn::Sub: ${EnvironmentName}-EcsClusterName
+        - Name: ServiceName
+          Value: !ImportValue 
+            Fn::Sub: ${EnvironmentName}-EcsServiceName
+      AlarmActions:
+        - !Ref AlarmTopic
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-${EnvironmentName}-ecs-memory-alarm
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # DocumentDB CPU使用率アラーム
+  DocumentDbCpuAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${AppName}-${EnvironmentName}-documentdb-cpu
+      AlarmDescription: DocumentDB CPU utilization is high
+      MetricName: CPUUtilization
+      Namespace: AWS/DocDB
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: DBClusterIdentifier
+          Value: !ImportValue 
+            Fn::Sub: ${EnvironmentName}-DocumentDBClusterIdentifier
+      AlarmActions:
+        - !Ref AlarmTopic
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-${EnvironmentName}-documentdb-cpu-alarm
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # DocumentDB メモリ使用率アラーム
+  DocumentDbMemoryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${AppName}-${EnvironmentName}-documentdb-memory
+      AlarmDescription: DocumentDB Memory utilization is high
+      MetricName: FreeableMemory
+      Namespace: AWS/DocDB
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 1073741824  # 1GB
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: DBClusterIdentifier
+          Value: !ImportValue 
+            Fn::Sub: ${EnvironmentName}-DocumentDBClusterIdentifier
+      AlarmActions:
+        - !Ref AlarmTopic
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-${EnvironmentName}-documentdb-memory-alarm
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # Lambda エラー率アラーム
+  LambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${AppName}-${EnvironmentName}-lambda-errors
+      AlarmDescription: Lambda error rate is high
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !ImportValue 
+            Fn::Sub: ${EnvironmentName}-NotificationLambdaName
+      AlarmActions:
+        - !Ref AlarmTopic
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-${EnvironmentName}-lambda-error-alarm
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # API Gateway エラー率アラーム
+  ApiGatewayErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${AppName}-${EnvironmentName}-apigateway-errors
+      AlarmDescription: API Gateway error rate is high
+      MetricName: 5XXError
+      Namespace: AWS/ApiGateway
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !ImportValue 
+            Fn::Sub: ${EnvironmentName}-ApiId
+      AlarmActions:
+        - !Ref AlarmTopic
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-${EnvironmentName}-apigateway-error-alarm
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+Outputs:
+  AlarmTopicArn:
+    Description: SNS topic ARN for alarm notifications
+    Value: !Ref AlarmTopic
+    Export:
+      Name: !Sub ${EnvironmentName}-AlarmTopicArn 

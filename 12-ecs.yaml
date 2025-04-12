@@ -1,0 +1,153 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: ECS Cluster, Task Definition, and Service for Application
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    Description: Environment name (dev/prod)
+
+  AppName:
+    Type: String
+    Default: myapp
+    Description: Application name
+
+  ImageTag:
+    Type: String
+    Default: latest
+    Description: Tag of the container image
+
+  DesiredCount:
+    Type: Number
+    Default: 1
+    Description: Number of tasks to run
+
+  ContainerPort:
+    Type: Number
+    Default: 80
+    Description: Port number for the container
+
+Conditions:
+  IsDev: !Equals [!Ref EnvironmentName, 'dev']
+  IsProd: !Equals [!Ref EnvironmentName, 'prod']
+
+Resources:
+  # ECSクラスター
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub ${AppName}-${EnvironmentName}-cluster
+      CapacityProviders:
+        - FARGATE
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE
+          Weight: 1
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-${EnvironmentName}-cluster
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # アプリケーション実行用ロール
+  AppExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AppName}-${EnvironmentName}-app-execution-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !ImportValue 
+                    Fn::Sub: ${EnvironmentName}-BackupBucketArn
+                  - !Sub ${ImportValue 
+                    Fn::Sub: ${EnvironmentName}-BackupBucketArn}/*
+
+  # タスク定義
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${AppName}-${EnvironmentName}-task
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: 256
+      Memory: 512
+      ExecutionRoleArn: !ImportValue 
+        Fn::Sub: ${EnvironmentName}-EcsTaskExecutionRoleArn
+      TaskRoleArn: !GetAtt AppExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: !Sub ${AppName}-${EnvironmentName}-container
+          Image: !Sub ${AppContainerRepositoryUri}:${ImageTag}
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+          Environment:
+            - Name: ENVIRONMENT
+              Value: !Ref EnvironmentName
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+  # CloudWatch Logsグループ
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /ecs/${AppName}-${EnvironmentName}
+      RetentionInDays: 30
+
+  # ECSサービス
+  Service:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub ${AppName}-${EnvironmentName}-service
+      Cluster: !Ref EcsCluster
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - !ImportValue 
+              Fn::Sub: ${EnvironmentName}-EcsSecurityGroupId
+          Subnets:
+            - !ImportValue 
+              Fn::Sub: ${EnvironmentName}-PrivateSubnet1AId
+            - !ImportValue 
+              Fn::Sub: ${EnvironmentName}-PrivateSubnet1CId
+      LoadBalancers:
+        - TargetGroupArn: !ImportValue 
+            Fn::Sub: ${EnvironmentName}-TargetGroupArn
+          ContainerName: !Sub ${AppName}-${EnvironmentName}-container
+          ContainerPort: !Ref ContainerPort
+
+Outputs:
+  EcsClusterName:
+    Description: Name of the ECS cluster
+    Value: !Ref EcsCluster
+    Export:
+      Name: !Sub ${EnvironmentName}-EcsClusterName
+
+  ServiceName:
+    Description: Name of the ECS service
+    Value: !Ref Service
+    Export:
+      Name: !Sub ${EnvironmentName}-EcsServiceName 

@@ -1,0 +1,107 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: IAM Roles for Application
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    Description: Environment name (dev/prod)
+
+  AppName:
+    Type: String
+    Default: myapp
+    Description: Application name
+
+Conditions:
+  IsDev: !Equals [!Ref EnvironmentName, 'dev']
+  IsProd: !Equals [!Ref EnvironmentName, 'prod']
+
+Resources:
+  # Lambda実行ロール
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AppName}-${EnvironmentName}-lambda-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Policies:
+        - PolicyName: S3AccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !ImportValue 
+                  Fn::Sub: ${EnvironmentName}-AppDataBucketArn/*
+
+  # ECSタスク実行ロール
+  EcsTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AppName}-${EnvironmentName}-ecs-task-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  # ECSタスクロール
+  EcsTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AppName}-${EnvironmentName}-ecs-task-execution-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: S3AccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !ImportValue 
+                  Fn::Sub: ${EnvironmentName}-AppDataBucketArn/*
+
+Outputs:
+  LambdaExecutionRoleArn:
+    Description: ARN of the Lambda execution role
+    Value: !GetAtt LambdaExecutionRole.Arn
+    Export:
+      Name: !Sub ${EnvironmentName}-LambdaExecutionRoleArn
+
+  EcsTaskExecutionRoleArn:
+    Description: ARN of the ECS task execution role
+    Value: !GetAtt EcsTaskExecutionRole.Arn
+    Export:
+      Name: !Sub ${EnvironmentName}-EcsTaskExecutionRoleArn
+
+  EcsTaskRoleArn:
+    Description: ARN of the ECS task role
+    Value: !GetAtt EcsTaskRole.Arn
+    Export:
+      Name: !Sub ${EnvironmentName}-EcsTaskRoleArn 

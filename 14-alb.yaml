@@ -1,0 +1,112 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Application Load Balancer for Application
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    Description: Environment name (dev/prod)
+
+  AppName:
+    Type: String
+    Default: myapp
+    Description: Application name
+
+  VpcCidr:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: CIDR block for the VPC
+
+  CertificateArn:
+    Type: String
+    Description: ARN of the SSL certificate for HTTPS
+    Default: ''
+
+Conditions:
+  IsDev: !Equals [!Ref EnvironmentName, 'dev']
+  IsProd: !Equals [!Ref EnvironmentName, 'prod']
+
+Resources:
+  # ターゲットグループ
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${AppName}-${EnvironmentName}-tg
+      Port: 80
+      Protocol: HTTP
+      TargetType: ip
+      VpcId: !ImportValue 
+        Fn::Sub: ${EnvironmentName}-VpcId
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-${EnvironmentName}-tg
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # アプリケーションロードバランサー
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${AppName}-${EnvironmentName}-alb
+      Scheme: internet-facing
+      Type: application
+      SecurityGroups:
+        - !ImportValue 
+          Fn::Sub: ${EnvironmentName}-AlbSecurityGroupId
+      Subnets:
+        - !ImportValue 
+          Fn::Sub: ${EnvironmentName}-PublicSubnet1AId
+        - !ImportValue 
+          Fn::Sub: ${EnvironmentName}-PublicSubnet1CId
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-${EnvironmentName}-alb
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # HTTPリスナー
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  # HTTPSリスナー（本番環境のみ）
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: IsProd
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref CertificateArn
+      SslPolicy: ELBSecurityPolicy-TLS-1-2-2017-01
+
+Outputs:
+  AlbDnsName:
+    Description: DNS name of the ALB
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+    Export:
+      Name: !Sub ${EnvironmentName}-AlbDnsName
+
+  TargetGroupArn:
+    Description: ARN of the target group
+    Value: !Ref TargetGroup
+    Export:
+      Name: !Sub ${EnvironmentName}-TargetGroupArn 

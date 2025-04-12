@@ -1,0 +1,191 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudWatch Logs Configuration
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    Description: Environment name (dev/prod)
+
+  AppName:
+    Type: String
+    Default: myapp
+    Description: Application name
+
+  LogRetentionInDays:
+    Type: Number
+    Default: 30
+    MinValue: 1
+    MaxValue: 3653
+    Description: Number of days to retain logs
+
+  LambdaFunctionArn:
+    Type: String
+    Description: ARN of the Lambda function to process logs
+
+Resources:
+  # ロググループ
+  EcsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/ecs/${AppName}-${EnvironmentName}
+      RetentionInDays: !Ref LogRetentionInDays
+
+  DocumentDbLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/docdb/${AppName}-${EnvironmentName}
+      RetentionInDays: !Ref LogRetentionInDays
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AppName}-${EnvironmentName}
+      RetentionInDays: !Ref LogRetentionInDays
+
+  ApiGatewayLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/apigateway/${AppName}-${EnvironmentName}
+      RetentionInDays: !Ref LogRetentionInDays
+
+  # ログストリーム
+  EcsLogStream:
+    Type: AWS::Logs::LogStream
+    Properties:
+      LogGroupName: !Sub /aws/ecs/${AppName}-${EnvironmentName}
+      LogStreamName: !Sub ${AppName}-${EnvironmentName}-ecs
+
+  DocumentDbLogStream:
+    Type: AWS::Logs::LogStream
+    Properties:
+      LogGroupName: !Sub /aws/docdb/${AppName}-${EnvironmentName}
+      LogStreamName: !Sub ${AppName}-${EnvironmentName}-docdb
+
+  LambdaLogStream:
+    Type: AWS::Logs::LogStream
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AppName}-${EnvironmentName}
+      LogStreamName: !Sub ${AppName}-${EnvironmentName}-lambda
+
+  ApiGatewayLogStream:
+    Type: AWS::Logs::LogStream
+    Properties:
+      LogGroupName: !Sub /aws/apigateway/${AppName}-${EnvironmentName}
+      LogStreamName: !Sub ${AppName}-${EnvironmentName}-apigateway
+
+  # サブスクリプションフィルター
+  EcsErrorFilter:
+    Type: AWS::Logs::SubscriptionFilter
+    Properties:
+      LogGroupName: !Sub /aws/ecs/${AppName}-${EnvironmentName}
+      FilterPattern: '[error, ERROR, Error]'
+      DestinationArn: !Ref LambdaFunctionArn
+
+  DocumentDbErrorFilter:
+    Type: AWS::Logs::SubscriptionFilter
+    Properties:
+      LogGroupName: !Sub /aws/docdb/${AppName}-${EnvironmentName}
+      FilterPattern: '[error, ERROR, Error, failed, FAILED]'
+      DestinationArn: !Ref LambdaFunctionArn
+
+  LambdaErrorFilter:
+    Type: AWS::Logs::SubscriptionFilter
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AppName}-${EnvironmentName}
+      FilterPattern: '[error, ERROR, Error, exception, EXCEPTION]'
+      DestinationArn: !Ref LambdaFunctionArn
+
+  ApiGatewayErrorFilter:
+    Type: AWS::Logs::SubscriptionFilter
+    Properties:
+      LogGroupName: !Sub /aws/apigateway/${AppName}-${EnvironmentName}
+      FilterPattern: '[error, ERROR, Error, 5xx, 4xx]'
+      DestinationArn: !Ref LambdaFunctionArn
+
+  # Lambda関数の権限設定
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LambdaFunctionArn
+      Principal: logs.amazonaws.com
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-${EnvironmentName}-apigateway-logs
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # ロググループの暗号化用KMSキー
+  LogsKmsKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: KMS key for CloudWatch Logs encryption
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Id: key-default-1
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action: kms:*
+            Resource: '*'
+          - Sid: Allow CloudWatch Logs to use the key
+            Effect: Allow
+            Principal:
+              Service: logs.${AWS::Region}.amazonaws.com
+            Action:
+              - kms:Encrypt*
+              - kms:Decrypt*
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:Describe*
+            Resource: '*'
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-${EnvironmentName}-logs-kms-key
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # KMSキーのエイリアス
+  LogsKmsKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub alias/${AppName}-${EnvironmentName}-logs
+      TargetKeyId: !Ref LogsKmsKey
+
+Outputs:
+  EcsLogGroupName:
+    Description: ECS Log Group name
+    Value: !Ref EcsLogGroup
+    Export:
+      Name: !Sub ${EnvironmentName}-EcsLogGroupName
+
+  DocumentDbLogGroupName:
+    Description: DocumentDB Log Group name
+    Value: !Ref DocumentDbLogGroup
+    Export:
+      Name: !Sub ${EnvironmentName}-DocumentDbLogGroupName
+
+  LambdaLogGroupName:
+    Description: Lambda Log Group name
+    Value: !Ref LambdaLogGroup
+    Export:
+      Name: !Sub ${EnvironmentName}-LambdaLogGroupName
+
+  ApiGatewayLogGroupName:
+    Description: API Gateway Log Group name
+    Value: !Ref ApiGatewayLogGroup
+    Export:
+      Name: !Sub ${EnvironmentName}-ApiGatewayLogGroupName
+
+  LogsKmsKeyArn:
+    Description: KMS key ARN for logs encryption
+    Value: !GetAtt LogsKmsKey.Arn
+    Export:
+      Name: !Sub ${EnvironmentName}-LogsKmsKeyArn 

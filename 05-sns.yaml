@@ -1,0 +1,80 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: SNS Topics and Subscriptions for Application
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    Description: Environment name (dev/prod)
+
+  AppName:
+    Type: String
+    Default: myapp
+    Description: Application name
+
+Conditions:
+  IsDev: !Equals [!Ref EnvironmentName, 'dev']
+  IsProd: !Equals [!Ref EnvironmentName, 'prod']
+
+Resources:
+  # アプリケーションイベント通知用トピック
+  AppEventTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub ${AppName}-${EnvironmentName}-events
+      DisplayName: !Sub ${AppName}-${EnvironmentName}-events
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-${EnvironmentName}-events
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # エラー通知用トピック
+  ErrorTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub ${AppName}-${EnvironmentName}-errors
+      DisplayName: !Sub ${AppName}-${EnvironmentName}-errors
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-${EnvironmentName}-errors
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # イベント通知のLambdaサブスクリプション
+  AppEventLambdaSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref AppEventTopic
+      Protocol: lambda
+      Endpoint: !ImportValue 
+        Fn::Sub: ${EnvironmentName}-NotificationLambdaArn
+      FilterPolicy:
+        environment: !Ref EnvironmentName
+
+  # エラー通知のLambdaサブスクリプション
+  ErrorLambdaSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref ErrorTopic
+      Protocol: lambda
+      Endpoint: !ImportValue 
+        Fn::Sub: ${EnvironmentName}-NotificationLambdaArn
+      FilterPolicy:
+        environment: !Ref EnvironmentName
+
+Outputs:
+  AppEventTopicArn:
+    Description: ARN of the application event topic
+    Value: !Ref AppEventTopic
+    Export:
+      Name: !Sub ${EnvironmentName}-AppEventTopicArn
+
+  ErrorTopicArn:
+    Description: ARN of the error notification topic
+    Value: !Ref ErrorTopic
+    Export:
+      Name: !Sub ${EnvironmentName}-ErrorTopicArn 

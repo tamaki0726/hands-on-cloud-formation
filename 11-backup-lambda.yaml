@@ -1,0 +1,96 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Backup Lambda Function for Application
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    Description: Environment name (dev/prod)
+
+  AppName:
+    Type: String
+    Default: myapp
+    Description: Application name
+
+  ImageTag:
+    Type: String
+    Default: latest
+    Description: Tag of the container image
+
+Conditions:
+  IsDev: !Equals [!Ref EnvironmentName, 'dev']
+  IsProd: !Equals [!Ref EnvironmentName, 'prod']
+
+Resources:
+  # バックアップ用Lambda関数の実行ロール
+  BackupLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AppName}-${EnvironmentName}-backup-lambda-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !ImportValue 
+                    Fn::Sub: ${EnvironmentName}-BackupBucketArn
+                  - !Sub ${ImportValue 
+                    Fn::Sub: ${EnvironmentName}-BackupBucketArn}/*
+
+  # バックアップ用Lambda関数
+  BackupLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${AppName}-${EnvironmentName}-backup
+      Description: !Sub Backup Lambda for ${AppName}-${EnvironmentName}
+      PackageType: Image
+      Code:
+        ImageUri: !Sub ${BackupLambdaRepositoryUri}:${ImageTag}
+      Role: !GetAtt BackupLambdaRole.Arn
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref EnvironmentName
+          BACKUP_BUCKET: !ImportValue 
+            Fn::Sub: ${EnvironmentName}-BackupBucketName
+      Timeout: 300
+      MemorySize: 256
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-${EnvironmentName}-backup
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # EventBridgeからの呼び出しを許可
+  EventBridgePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref BackupLambda
+      Principal: events.amazonaws.com
+      SourceArn: !ImportValue 
+        Fn::Sub: ${EnvironmentName}-BackupRuleArn
+
+Outputs:
+  BackupLambdaArn:
+    Description: ARN of the backup Lambda function
+    Value: !GetAtt BackupLambda.Arn
+    Export:
+      Name: !Sub ${EnvironmentName}-BackupLambdaArn 

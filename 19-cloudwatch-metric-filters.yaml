@@ -1,0 +1,174 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudWatch Metric Filters Configuration
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    Description: Environment name (dev/prod)
+
+  AppName:
+    Type: String
+    Default: myapp
+    Description: Application name
+
+Resources:
+  # ECSメトリクスフィルター
+  EcsErrorMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Sub /aws/ecs/${AppName}-${EnvironmentName}
+      FilterPattern: '[error, ERROR, Error]'
+      MetricTransformations:
+        - MetricName: !Sub ${AppName}-${EnvironmentName}-EcsErrors
+          MetricNamespace: !Sub ${AppName}/${EnvironmentName}
+          MetricValue: '1'
+          DefaultValue: 0
+          Dimensions:
+            - Key: Environment
+              Value: !Ref EnvironmentName
+            - Key: Service
+              Value: ECS
+
+  EcsLatencyMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Sub /aws/ecs/${AppName}-${EnvironmentName}
+      FilterPattern: '{ $.duration = * }'
+      MetricTransformations:
+        - MetricName: !Sub ${AppName}-${EnvironmentName}-EcsLatency
+          MetricNamespace: !Sub ${AppName}/${EnvironmentName}
+          MetricValue: '$.duration'
+          DefaultValue: 0
+          Dimensions:
+            - Key: Environment
+              Value: !Ref EnvironmentName
+            - Key: Service
+              Value: ECS
+
+  # DocumentDBメトリクスフィルター
+  DocumentDbErrorMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Sub /aws/docdb/${AppName}-${EnvironmentName}
+      FilterPattern: '[error, ERROR, Error, failed, FAILED]'
+      MetricTransformations:
+        - MetricName: !Sub ${AppName}-${EnvironmentName}-DocumentDbErrors
+          MetricNamespace: !Sub ${AppName}/${EnvironmentName}
+          MetricValue: '1'
+          DefaultValue: 0
+          Dimensions:
+            - Key: Environment
+              Value: !Ref EnvironmentName
+            - Key: Service
+              Value: DocumentDB
+
+  DocumentDbLatencyMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Sub /aws/docdb/${AppName}-${EnvironmentName}
+      FilterPattern: '{ $.duration = * }'
+      MetricTransformations:
+        - MetricName: !Sub ${AppName}-${EnvironmentName}-DocumentDbLatency
+          MetricNamespace: !Sub ${AppName}/${EnvironmentName}
+          MetricValue: '$.duration'
+          DefaultValue: 0
+          Dimensions:
+            - Key: Environment
+              Value: !Ref EnvironmentName
+            - Key: Service
+              Value: DocumentDB
+
+  # Lambdaメトリクスフィルター
+  LambdaErrorMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AppName}-${EnvironmentName}
+      FilterPattern: '[error, ERROR, Error, exception, EXCEPTION]'
+      MetricTransformations:
+        - MetricName: !Sub ${AppName}-${EnvironmentName}-LambdaErrors
+          MetricNamespace: !Sub ${AppName}/${EnvironmentName}
+          MetricValue: '1'
+          DefaultValue: 0
+          Dimensions:
+            - Key: Environment
+              Value: !Ref EnvironmentName
+            - Key: Service
+              Value: Lambda
+
+  LambdaDurationMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AppName}-${EnvironmentName}
+      FilterPattern: '{ $.duration = * }'
+      MetricTransformations:
+        - MetricName: !Sub ${AppName}-${EnvironmentName}-LambdaDuration
+          MetricNamespace: !Sub ${AppName}/${EnvironmentName}
+          MetricValue: '$.duration'
+          DefaultValue: 0
+          Dimensions:
+            - Key: Environment
+              Value: !Ref EnvironmentName
+            - Key: Service
+              Value: Lambda
+
+  # API Gatewayメトリクスフィルター
+  ApiGatewayErrorMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Sub /aws/apigateway/${AppName}-${EnvironmentName}
+      FilterPattern: '[error, ERROR, Error, 5xx, 4xx]'
+      MetricTransformations:
+        - MetricName: !Sub ${AppName}-${EnvironmentName}-ApiGatewayErrors
+          MetricNamespace: !Sub ${AppName}/${EnvironmentName}
+          MetricValue: '1'
+          DefaultValue: 0
+          Dimensions:
+            - Key: Environment
+              Value: !Ref EnvironmentName
+            - Key: Service
+              Value: ApiGateway
+
+  ApiGatewayLatencyMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Sub /aws/apigateway/${AppName}-${EnvironmentName}
+      FilterPattern: '{ $.duration = * }'
+      MetricTransformations:
+        - MetricName: !Sub ${AppName}-${EnvironmentName}-ApiGatewayLatency
+          MetricNamespace: !Sub ${AppName}/${EnvironmentName}
+          MetricValue: '$.duration'
+          DefaultValue: 0
+          Dimensions:
+            - Key: Environment
+              Value: !Ref EnvironmentName
+            - Key: Service
+              Value: ApiGateway
+
+Outputs:
+  EcsErrorMetricName:
+    Description: ECS Error Metric name
+    Value: !Sub ${AppName}-${EnvironmentName}-EcsErrors
+    Export:
+      Name: !Sub ${EnvironmentName}-EcsErrorMetricName
+
+  DocumentDbErrorMetricName:
+    Description: DocumentDB Error Metric name
+    Value: !Sub ${AppName}-${EnvironmentName}-DocumentDbErrors
+    Export:
+      Name: !Sub ${EnvironmentName}-DocumentDbErrorMetricName
+
+  LambdaErrorMetricName:
+    Description: Lambda Error Metric name
+    Value: !Sub ${AppName}-${EnvironmentName}-LambdaErrors
+    Export:
+      Name: !Sub ${EnvironmentName}-LambdaErrorMetricName
+
+  ApiGatewayErrorMetricName:
+    Description: API Gateway Error Metric name
+    Value: !Sub ${AppName}-${EnvironmentName}-ApiGatewayErrors
+    Export:
+      Name: !Sub ${EnvironmentName}-ApiGatewayErrorMetricName 

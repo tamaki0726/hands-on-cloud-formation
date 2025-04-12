@@ -1,0 +1,78 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: EventBridge Rules and Targets for Application
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    Description: Environment name (dev/prod)
+
+  AppName:
+    Type: String
+    Default: myapp
+    Description: Application name
+
+Conditions:
+  IsDev: !Equals [!Ref EnvironmentName, 'dev']
+  IsProd: !Equals [!Ref EnvironmentName, 'prod']
+
+Resources:
+  # 定期的なバックアップ実行用ルール
+  BackupRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${AppName}-${EnvironmentName}-backup-rule
+      Description: Rule for scheduled backup
+      ScheduleExpression: rate(1 day)
+      State: ENABLED
+      Targets:
+        - Arn: !ImportValue 
+            Fn::Sub: ${EnvironmentName}-BackupLambdaArn
+          Id: BackupLambdaTarget
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-${EnvironmentName}-backup-rule
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # アプリケーション状態監視用ルール
+  StatusMonitorRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${AppName}-${EnvironmentName}-status-monitor-rule
+      Description: Rule for monitoring application status
+      EventPattern: |
+        {
+          "source": ["aws.ecs"],
+          "detail-type": ["ECS Task State Change"],
+          "detail": {
+            "clusterArn": [{"prefix": !Sub "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:cluster/${AppName}-${EnvironmentName}"}],
+            "lastStatus": ["STOPPED"]
+          }
+        }
+      State: ENABLED
+      Targets:
+        - Arn: !ImportValue 
+            Fn::Sub: ${EnvironmentName}-NotificationLambdaArn
+          Id: NotificationLambdaTarget
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-${EnvironmentName}-status-monitor-rule
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+Outputs:
+  BackupRuleArn:
+    Description: ARN of the backup rule
+    Value: !GetAtt BackupRule.Arn
+    Export:
+      Name: !Sub ${EnvironmentName}-BackupRuleArn
+
+  StatusMonitorRuleArn:
+    Description: ARN of the status monitor rule
+    Value: !GetAtt StatusMonitorRule.Arn
+    Export:
+      Name: !Sub ${EnvironmentName}-StatusMonitorRuleArn 

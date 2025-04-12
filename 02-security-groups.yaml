@@ -1,0 +1,145 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Security Groups for Web Application
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    Description: Environment name (dev/prod)
+
+Conditions:
+  IsDev: !Equals [!Ref EnvironmentName, 'dev']
+  IsProd: !Equals [!Ref EnvironmentName, 'prod']
+
+Resources:
+  # ALB用のセキュリティグループ
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for ALB
+      VpcId: !ImportValue 
+        Fn::Sub: ${EnvironmentName}-VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: Allow HTTP access from anywhere
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: Allow HTTPS access from anywhere
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-alb-sg
+
+  # Lambda用のセキュリティグループ（VPC内で実行する場合）
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Lambda functions in VPC
+      VpcId: !ImportValue 
+        Fn::Sub: ${EnvironmentName}-VpcId
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic
+        - IpProtocol: tcp
+          FromPort: 27017
+          ToPort: 27017
+          DestinationSecurityGroupId: !Ref DocumentDBSecurityGroup
+          Description: Allow MongoDB access to DocumentDB
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-lambda-sg
+
+  # DocumentDB用のセキュリティグループ
+  DocumentDBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for DocumentDB
+      VpcId: !ImportValue 
+        Fn::Sub: ${EnvironmentName}-VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 27017
+          ToPort: 27017
+          SourceSecurityGroupId: !Ref LambdaSecurityGroup
+          Description: Allow MongoDB access from Lambda
+        - IpProtocol: tcp
+          FromPort: 27017
+          ToPort: 27017
+          SourceSecurityGroupId: !Ref EcsSecurityGroup
+          Description: Allow MongoDB access from ECS
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !If 
+            - IsDev
+            - 0.0.0.0/0
+            - !ImportValue 
+              Fn::Sub: ${EnvironmentName}-VpcCidrBlock
+          Description: Allow SSH access (restricted in prod)
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-documentdb-sg
+
+  # ECS用のセキュリティグループ
+  EcsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for ECS tasks
+      VpcId: !ImportValue 
+        Fn::Sub: ${EnvironmentName}-VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+          Description: Allow HTTP access from ALB
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+          Description: Allow HTTPS access from ALB
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic
+        - IpProtocol: tcp
+          FromPort: 27017
+          ToPort: 27017
+          DestinationSecurityGroupId: !Ref DocumentDBSecurityGroup
+          Description: Allow MongoDB access to DocumentDB
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-ecs-sg
+
+Outputs:
+  AlbSecurityGroupId:
+    Description: Security Group ID for ALB
+    Value: !Ref AlbSecurityGroup
+    Export:
+      Name: !Sub ${EnvironmentName}-AlbSecurityGroupId
+
+  LambdaSecurityGroupId:
+    Description: Security Group ID for Lambda functions
+    Value: !Ref LambdaSecurityGroup
+    Export:
+      Name: !Sub ${EnvironmentName}-LambdaSecurityGroupId
+
+  DocumentDBSecurityGroupId:
+    Description: Security Group ID for DocumentDB
+    Value: !Ref DocumentDBSecurityGroup
+    Export:
+      Name: !Sub ${EnvironmentName}-DocumentDBSecurityGroupId
+
+  EcsSecurityGroupId:
+    Description: Security Group ID for ECS tasks
+    Value: !Ref EcsSecurityGroup
+    Export:
+      Name: !Sub ${EnvironmentName}-EcsSecurityGroupId 

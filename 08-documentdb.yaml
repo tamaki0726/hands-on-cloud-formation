@@ -1,0 +1,101 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: DocumentDB Cluster and Instances for Application
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    Description: Environment name (dev/prod)
+
+  AppName:
+    Type: String
+    Default: myapp
+    Description: Application name
+
+  DBInstanceClass:
+    Type: String
+    Default: db.t3.medium
+    Description: DocumentDB instance class
+    AllowedValues:
+      - db.t3.medium
+      - db.r5.large
+      - db.r5.xlarge
+      - db.r5.2xlarge
+
+Conditions:
+  IsDev: !Equals [!Ref EnvironmentName, 'dev']
+  IsProd: !Equals [!Ref EnvironmentName, 'prod']
+
+Resources:
+  # DocumentDBクラスター
+  DBCluster:
+    Type: AWS::DocDB::DBCluster
+    Properties:
+      DBClusterIdentifier: !Sub ${AppName}-${EnvironmentName}-cluster
+      MasterUsername: !Sub '{{resolve:secretsmanager:${EnvironmentName}-DocumentDBSecretArn:SecretString:username}}'
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${EnvironmentName}-DocumentDBSecretArn:SecretString:password}}'
+      VpcSecurityGroupIds:
+        - !ImportValue 
+          Fn::Sub: ${EnvironmentName}-DocumentDBSecurityGroupId
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      BackupRetentionPeriod: !If [IsProd, 7, 1]
+      PreferredBackupWindow: 03:00-04:00
+      PreferredMaintenanceWindow: !If [IsProd, 'sun:04:00-sun:05:00', 'sat:04:00-sat:05:00']
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-${EnvironmentName}-cluster
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # DocumentDBサブネットグループ
+  DBSubnetGroup:
+    Type: AWS::DocDB::DBSubnetGroup
+    Properties:
+      DBSubnetGroupName: !Sub ${AppName}-${EnvironmentName}-subnet-group
+      DBSubnetGroupDescription: !Sub Subnet group for ${AppName}-${EnvironmentName} DocumentDB
+      SubnetIds:
+        - !ImportValue 
+          Fn::Sub: ${EnvironmentName}-PrivateSubnet2AId
+        - !ImportValue 
+          Fn::Sub: ${EnvironmentName}-PrivateSubnet2CId
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-${EnvironmentName}-subnet-group
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # DocumentDBインスタンス
+  DBInstance:
+    Type: AWS::DocDB::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub ${AppName}-${EnvironmentName}-instance
+      DBClusterIdentifier: !Ref DBCluster
+      DBInstanceClass: !Ref DBInstanceClass
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-${EnvironmentName}-instance
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+Outputs:
+  DBClusterEndpoint:
+    Description: DocumentDB cluster endpoint
+    Value: !GetAtt DBCluster.Endpoint
+    Export:
+      Name: !Sub ${EnvironmentName}-DocumentDBClusterEndpoint
+
+  DBClusterPort:
+    Description: DocumentDB cluster port
+    Value: !GetAtt DBCluster.Port
+    Export:
+      Name: !Sub ${EnvironmentName}-DocumentDBClusterPort
+
+  DBClusterIdentifier:
+    Description: DocumentDB cluster identifier
+    Value: !Ref DBCluster
+    Export:
+      Name: !Sub ${EnvironmentName}-DocumentDBClusterIdentifier 

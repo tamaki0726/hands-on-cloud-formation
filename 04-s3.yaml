@@ -1,0 +1,86 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: S3 Buckets for Application
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    Description: Environment name (dev/prod)
+
+  AppName:
+    Type: String
+    Default: myapp
+    Description: Application name
+
+Conditions:
+  IsDev: !Equals [!Ref EnvironmentName, 'dev']
+  IsProd: !Equals [!Ref EnvironmentName, 'prod']
+
+Resources:
+  # アプリケーションデータ用バケット
+  AppDataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${AppName}-${EnvironmentName}-data
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-${EnvironmentName}-data
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # アプリケーションデータ用バケットポリシー
+  AppDataBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref AppDataBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Lambdaからのアクセス許可
+          - Effect: Allow
+            Principal:
+              AWS: !ImportValue 
+                Fn::Sub: ${EnvironmentName}-LambdaExecutionRoleArn
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+              - s3:DeleteObject
+            Resource: !Sub ${AppDataBucket.Arn}/*
+
+          # ECSタスクからのアクセス許可
+          - Effect: Allow
+            Principal:
+              AWS: !ImportValue 
+                Fn::Sub: ${EnvironmentName}-EcsTaskRoleArn
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+              - s3:DeleteObject
+            Resource: !Sub ${AppDataBucket.Arn}/*
+
+Outputs:
+  AppDataBucketName:
+    Description: Name of the application data bucket
+    Value: !Ref AppDataBucket
+    Export:
+      Name: !Sub ${EnvironmentName}-AppDataBucketName
+
+  AppDataBucketArn:
+    Description: ARN of the application data bucket
+    Value: !GetAtt AppDataBucket.Arn
+    Export:
+      Name: !Sub ${EnvironmentName}-AppDataBucketArn 

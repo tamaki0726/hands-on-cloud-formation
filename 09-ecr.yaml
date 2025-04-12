@@ -1,0 +1,62 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: ECR Repositories for Application
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    Description: Environment name (dev/prod)
+
+  AppName:
+    Type: String
+    Default: myapp
+    Description: Application name
+
+Conditions:
+  IsDev: !Equals [!Ref EnvironmentName, 'dev']
+  IsProd: !Equals [!Ref EnvironmentName, 'prod']
+
+Resources:
+  # 通知用Lambdaのコンテナイメージ用リポジトリ
+  NotificationLambdaRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub ${AppName}-${EnvironmentName}-notification-lambda
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      ImageTagMutability: IMMUTABLE
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-${EnvironmentName}-notification-lambda
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # バックアップ用Lambdaのコンテナイメージ用リポジトリ
+  BackupLambdaRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub ${AppName}-${EnvironmentName}-backup-lambda
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      ImageTagMutability: IMMUTABLE
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-${EnvironmentName}-backup-lambda
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+Outputs:
+  NotificationLambdaRepositoryUri:
+    Description: URI of the notification Lambda repository
+    Value: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${NotificationLambdaRepository.RepositoryName}
+    Export:
+      Name: !Sub ${EnvironmentName}-NotificationLambdaRepositoryUri
+
+  BackupLambdaRepositoryUri:
+    Description: URI of the backup Lambda repository
+    Value: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${BackupLambdaRepository.RepositoryName}
+    Export:
+      Name: !Sub ${EnvironmentName}-BackupLambdaRepositoryUri 

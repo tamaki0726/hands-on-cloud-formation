@@ -1,0 +1,117 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Cloud9 Environment for Development
+
+Parameters:
+  AppName:
+    Type: String
+    Default: myapp
+    Description: Application name
+
+  InstanceType:
+    Type: String
+    Default: t3.small
+    AllowedValues:
+      - t3.small
+      - t3.medium
+      - t3.large
+    Description: EC2 instance type for Cloud9
+
+Resources:
+  # Cloud9環境
+  Cloud9Environment:
+    Type: AWS::Cloud9::EnvironmentEC2
+    Properties:
+      Name: !Sub ${AppName}-dev-cloud9
+      Description: Cloud9 environment for development
+      InstanceType: !Ref InstanceType
+      AutomaticStopTimeMinutes: 30
+      SubnetId: !ImportValue 
+        Fn::Sub: dev-PrivateSubnet1Id
+      ImageId: !FindInMap [RegionMap, !Ref AWS::Region, AL2023]
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-dev-cloud9
+        - Key: Environment
+          Value: dev
+
+  # Cloud9用のIAMロール
+  Cloud9Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AppName}-dev-cloud9-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSCloud9User
+        - arn:aws:iam::aws:policy/AWSCloud9Administrator
+      Policies:
+        - PolicyName: EcsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecs:*
+                  - ecr:*
+                Resource: '*'
+
+  # Cloud9用のインスタンスプロファイル
+  Cloud9InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub ${AppName}-dev-cloud9-profile
+      Roles:
+        - !Ref Cloud9Role
+
+  # Cloud9用のセキュリティグループ
+  Cloud9SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${AppName}-dev-cloud9-sg
+      GroupDescription: Security group for Cloud9 environment
+      VpcId: !ImportValue 
+        Fn::Sub: dev-VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-dev-cloud9-sg
+        - Key: Environment
+          Value: dev
+
+Mappings:
+  RegionMap:
+    ap-northeast-1:
+      AL2023: ami-0f6d0c1b1c1b1c1b1  # Amazon Linux 2023 AMI ID for ap-northeast-1
+    ap-northeast-3:
+      AL2023: ami-0f6d0c1b1c1b1c1b1  # Amazon Linux 2023 AMI ID for ap-northeast-3
+    # 他のリージョンのAMI IDも必要に応じて追加
+
+Outputs:
+  Cloud9EnvironmentId:
+    Description: ID of the Cloud9 environment
+    Value: !Ref Cloud9Environment
+    Export:
+      Name: !Sub dev-Cloud9EnvironmentId
+
+  Cloud9RoleArn:
+    Description: ARN of the Cloud9 IAM role
+    Value: !GetAtt Cloud9Role.Arn
+    Export:
+      Name: !Sub dev-Cloud9RoleArn 

@@ -1,0 +1,96 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Notification Lambda Function for Application
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    Description: Environment name (dev/prod)
+
+  AppName:
+    Type: String
+    Default: myapp
+    Description: Application name
+
+  ImageTag:
+    Type: String
+    Default: latest
+    Description: Tag of the container image
+
+Conditions:
+  IsDev: !Equals [!Ref EnvironmentName, 'dev']
+  IsProd: !Equals [!Ref EnvironmentName, 'prod']
+
+Resources:
+  # 通知用Lambda関数の実行ロール
+  NotificationLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AppName}-${EnvironmentName}-notification-lambda-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: SNSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: !ImportValue 
+                  Fn::Sub: ${EnvironmentName}-AppEventTopicArn
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: !ImportValue 
+                  Fn::Sub: ${EnvironmentName}-ErrorTopicArn
+
+  # 通知用Lambda関数
+  NotificationLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${AppName}-${EnvironmentName}-notification
+      Description: !Sub Notification Lambda for ${AppName}-${EnvironmentName}
+      PackageType: Image
+      Code:
+        ImageUri: !Sub ${NotificationLambdaRepositoryUri}:${ImageTag}
+      Role: !GetAtt NotificationLambdaRole.Arn
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref EnvironmentName
+          ERROR_TOPIC_ARN: !ImportValue 
+            Fn::Sub: ${EnvironmentName}-ErrorTopicArn
+      Timeout: 30
+      MemorySize: 128
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-${EnvironmentName}-notification
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # EventBridgeからの呼び出しを許可
+  EventBridgePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref NotificationLambda
+      Principal: events.amazonaws.com
+      SourceArn: !ImportValue 
+        Fn::Sub: ${EnvironmentName}-StatusMonitorRuleArn
+
+Outputs:
+  NotificationLambdaArn:
+    Description: ARN of the notification Lambda function
+    Value: !GetAtt NotificationLambda.Arn
+    Export:
+      Name: !Sub ${EnvironmentName}-NotificationLambdaArn 
