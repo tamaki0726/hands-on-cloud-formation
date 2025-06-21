@@ -1,0 +1,8 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: GitHub OIDC
+Resources:
+  MyAmplifyApp:
+    Type: AWS::Amplify::App
+    Properties:
+      Name: MyApp
+      Platform: WEB_COMPUTE
