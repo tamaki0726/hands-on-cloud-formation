@@ -27,7 +27,7 @@ Resources:
                 "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
               StringLike:
                 "token.actions.githubusercontent.com:sub":
-                  - "repo:<user>/<repository>"
+                  - "repo:tamaki0726/next-flask-k8s:ref:refs/heads/main"
       Policies:
         - PolicyName: GithubDeployPolicy
           PolicyDocument:

@@ -1,8 +1,185 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: GitHub OIDC
+Description: "Amplify Admin Frontend Hosting Stack"
+
+# -------------------------------------
+# Metadata
+# -------------------------------------
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Project Configuration"
+        Parameters:
+          - ProjectName
+          - Environment
+      - Label:
+          default: "Amplify Configuration"
+        Parameters:
+          # GitHubへのread write権限を付与するため
+          - GitHubAccessToken
+          - GitHubRepoURL
+          - SourceBranchName
+          # For Amplify
+          # - AmplifyDomainName
+          # - AmplifySubDomainPrefix
+          - AmplifyPlatform
+
+# -------------------------------------
+# Parameters
+# -------------------------------------
+Parameters:
+  ProjectName:
+    Description: "Enter the project name. (ex: my-project)"
+    Type: String
+    MinLength: 1
+    ConstraintDescription: "ProjectName must be enter."
+    Default: my-project
+  Environment:
+    Description: "Select the environment."
+    Type: String
+    AllowedValues:
+      - dev
+      - stg
+      - prd
+  GitHubAccessToken:
+    Description: "Enter the Github personal access token. (ex: ghp_xxxxxxxxxx)"
+    Type: String
+    NoEcho: true
+  GitHubRepoURL:
+    Description: "Enter the Github repository URL."
+    Type: String
+  SourceBranchName:
+    Description: "Enter the source branch name in GitHub frontend repository. (ex: main)"
+    Type: String
+  # SSRを使用する際はWEB_COMPUTEを選択
+  AmplifyPlatform:
+    Description: "Select the Amplify app platform. (when using SSR: WEB_COMPUTE)"
+    Type: String
+    Default: WEB_COMPUTE
+    AllowedValues:
+      - WEB
+      - WEB_COMPUTE
+      - WEB_DYNAMIC
+
+# -------------------------------------
+# Resources
+# -------------------------------------
 Resources:
-  MyAmplifyApp:
+  # -------------------------------------
+  # Amplify Hosting
+  # -------------------------------------
+  AmplifyFrontHosting:
     Type: AWS::Amplify::App
     Properties:
-      Name: MyApp
-      Platform: WEB_COMPUTE
+      Name: !Sub ${ProjectName}-${Environment}-admin-front-amplify
+      # GitHubにアクセスするために必要
+      AccessToken: !Ref GitHubAccessToken
+      Repository: !Ref GitHubRepoURL
+      Platform: !Ref AmplifyPlatform
+      # Automatically disconnect a branch in Amplify Hosting when you delete a branch from your Git repository
+      EnableBranchAutoDeletion: true
+      IAMServiceRole: !Ref AmplifyServiceRole
+      # 環境変数
+      # EnvironmentVariables:
+      #   - Name: _DISABLE_L2_CACHE
+      #     Value: true
+      #   - Name: AMPLIFY_MONOREPO_APP_ROOT
+      #     Value: application
+      BuildSpec: |
+        version: 1
+        applications:
+          - frontend:
+              phases:
+                preBuild:
+                  commands:
+                    - npm ci
+                build:
+                  commands:
+                    - npm run build
+              artifacts:
+                baseDirectory: .next
+                files:
+                  - "**/*"
+              cache:
+                paths:
+                  - "node_modules/**/*"
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-${Environment}-front-amplify
+        - Key: ProjectName
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # -------------------------------------
+  # Amplify Branch
+  # -------------------------------------
+  AmplifyBranch:
+    Type: AWS::Amplify::Branch
+    Properties:
+      AppId: !GetAtt AmplifyFrontHosting.AppId
+      BranchName: !Ref SourceBranchName
+      EnableAutoBuild: true
+      EnablePullRequestPreview: false
+      Framework: Next.js - SSR
+      Tags:
+        - Key: ProjectName
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: BranchName
+          Value: !Ref SourceBranchName
+
+  # -------------------------------------
+  # Amplify Custom Domain
+  # -------------------------------------
+  # AmplifyCustomDomain:
+  #   DependsOn: AmplifyBranch
+  #   Type: AWS::Amplify::Domain
+  #   Properties:
+  #     AppId: !GetAtt AmplifyFrontHosting.AppId
+  #     DomainName: !Ref AmplifyDomainName
+  #     SubDomainSettings:
+  #       - Prefix: !Ref AmplifySubDomainPrefix
+  #         BranchName: !Ref SourceBranchName
+
+  # -------------------------------------
+  # Amplify Service Role
+  # -------------------------------------
+  AmplifyServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub AmplifyServiceRoleForCWL-${ProjectName}-${Environment}-front
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: amplify.amazonaws.com
+            Action:
+              - sts:AssumeRole
+  AmplifyServiceRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub AmplifyAccessForCWL-${ProjectName}-${Environment}-front
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - logs:CreateLogStream
+              - logs:CreateLogGroup
+              - logs:DescribeLogGroups
+              - logs:PutLogEvents
+            Resource: "*"
+      Roles:
+        - Ref: AmplifyServiceRole
+
+# -------------------------------------
+# Outputs
+# -------------------------------------
+Outputs:
+  AmplifyAppID:
+    Value: !GetAtt AmplifyFrontHosting.AppId
+  # AmplifyCustomDomainURL:
+  #   Value: !Sub ${AmplifySubDomainPrefix}.${AmplifyCustomDomain.DomainName}
